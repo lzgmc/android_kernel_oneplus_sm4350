@@ -13,7 +13,7 @@
 #endif
 /*2020-11-13 ，OSP-5970 , monitor cpu info **/
 #include <linux/cpufreq.h>
-#include "../techpack/sched/walt.h"
+#include "../../../kernel/sched/walt/qc_vas.h"
 #include "../include/linux/cred.h"
 
 #define BUFFER_SIZE_S 256
