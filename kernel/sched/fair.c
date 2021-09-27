@@ -172,6 +172,7 @@ unsigned int sched_capacity_margin_down[NR_CPUS] = {
 __read_mostly unsigned int sysctl_sched_prefer_spread;
 unsigned int sysctl_walt_rtg_cfs_boost_prio = 99; /* disabled by default */
 unsigned int sysctl_walt_low_latency_task_threshold; /* disabled by default */
+unsigned int sysctl_sched_sync_hint_enable = 1;
 #endif
 unsigned int sched_small_task_threshold = 102;
 __read_mostly unsigned int sysctl_sched_force_lb_enable = 1;

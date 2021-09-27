@@ -207,7 +207,7 @@ struct msm_geni_serial_port {
 	bool s_cmd;
 	struct completion m_cmd_timeout;
 	struct completion s_cmd_timeout;
-    spinlock_t rx_lock;
+	spinlock_t rx_lock;
 };
 
 static const struct uart_ops msm_geni_serial_pops;
@@ -1977,8 +1977,8 @@ static bool handle_tx_dma_xfer(u32 m_irq_status, struct uart_port *uport)
 			msm_geni_serial_handle_dma_tx(uport);
 	}
 
-    if (m_irq_status & (M_CMD_CANCEL_EN | M_CMD_ABORT_EN))
-        ret = true;
+	if (m_irq_status & (M_CMD_CANCEL_EN | M_CMD_ABORT_EN))
+		ret = true;
 
 	return ret;
 }
@@ -1988,10 +1988,10 @@ static bool handle_rx_dma_xfer(u32 s_irq_status, struct uart_port *uport)
 	bool ret = false;
 	bool drop_rx = false;
 	struct msm_geni_serial_port *msm_port = GET_DEV_PORT(uport);
-    u32 dma_rx_status;
+	u32 dma_rx_status;
 
-    spin_lock(&msm_port->rx_lock);
-    dma_rx_status = geni_read_reg_nolog(uport->membase,
+	spin_lock(&msm_port->rx_lock);
+	dma_rx_status = geni_read_reg_nolog(uport->membase,
 						SE_DMA_RX_IRQ_STAT);
 
 	if (dma_rx_status) {
@@ -2001,7 +2001,7 @@ static bool handle_rx_dma_xfer(u32 s_irq_status, struct uart_port *uport)
 		if (dma_rx_status & RX_RESET_DONE) {
 			IPC_LOG_MSG(msm_port->ipc_log_misc,
 			"%s.Reset done.  0x%x.\n", __func__, dma_rx_status);
-            ret = true;
+			ret = true;
 			goto exit;
 		}
 
@@ -2045,11 +2045,11 @@ static bool handle_rx_dma_xfer(u32 s_irq_status, struct uart_port *uport)
 			ret = true;
 	}
 
-    if (s_irq_status & (S_CMD_CANCEL_EN | S_CMD_ABORT_EN))
-        ret = true;
+	if (s_irq_status & (S_CMD_CANCEL_EN | S_CMD_ABORT_EN))
+		ret = true;
 
 exit:
-    spin_unlock(&msm_port->rx_lock);
+	spin_unlock(&msm_port->rx_lock);
 	return ret;
 }
 
@@ -3301,8 +3301,8 @@ static int msm_geni_serial_probe(struct platform_device *pdev)
 	 */
 	if (uart_console(uport))
 		geni_se_remove_earlycon_icc_vote(dev_port->wrapper_dev);
-    else
-        spin_lock_init(&dev_port->rx_lock);
+	else
+		spin_lock_init(&dev_port->rx_lock);
 
 exit_geni_serial_probe:
 	IPC_LOG_MSG(dev_port->ipc_log_misc, "%s: ret:%d\n",
