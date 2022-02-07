@@ -25,7 +25,7 @@
 #include <trace/events/sched.h>
 #include <trace/hooks/sched.h>
 
-#include "walt.h"
+#include "walt/walt.h"
 
 #ifdef CONFIG_OPCHAIN
 //2020-10-23, add for uxrealm CONFIG_OPCHAIN
@@ -9541,9 +9541,10 @@ static inline void update_sg_lb_stats(struct lb_env *env,
 
 		sgs->group_load += cpu_runnable_load(rq);
 		sgs->group_util += cpu_util(i);
-		sgs->sum_nr_running += rq->cfs.h_nr_running;
 
 		nr_running = rq->nr_running;
+		sgs->sum_nr_running += nr_running;
+
 		if (nr_running > 1)
 			*sg_status |= SG_OVERLOAD;
 
