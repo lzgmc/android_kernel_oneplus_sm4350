@@ -351,6 +351,9 @@ int cnss_wlan_enable(struct device *dev,
 	if (mode == CNSS_WALTEST || mode == CNSS_CCPM)
 		goto skip_cfg;
 
+	if (plat_priv->device_id == QCN7605_DEVICE_ID)
+		config->send_msi_ce = true;
+
 	ret = cnss_wlfw_wlan_cfg_send_sync(plat_priv, config, host_version);
 	if (ret)
 		goto out;
@@ -485,10 +488,16 @@ static int cnss_fw_mem_ready_hdlr(struct cnss_plat_data *plat_priv)
 
 	cnss_wlfw_bdf_dnld_send_sync(plat_priv, CNSS_BDF_REGDB);
 
+	if (plat_priv->device_id == QCN7605_DEVICE_ID)
+		plat_priv->ctrl_params.bdf_type = CNSS_BDF_BIN;
+
 	ret = cnss_wlfw_bdf_dnld_send_sync(plat_priv,
 					   plat_priv->ctrl_params.bdf_type);
 	if (ret)
 		goto out;
+
+	if (plat_priv->device_id == QCN7605_DEVICE_ID)
+		return 0;
 
 	ret = cnss_bus_load_m3(plat_priv);
 	if (ret)
@@ -497,6 +506,9 @@ static int cnss_fw_mem_ready_hdlr(struct cnss_plat_data *plat_priv)
 	ret = cnss_wlfw_m3_dnld_send_sync(plat_priv);
 	if (ret)
 		goto out;
+
+	if (cnss_wlfw_qdss_dnld_send_sync(plat_priv))
+		cnss_pr_info("Failed to download qdss configuration file");
 
 	return 0;
 out:
@@ -587,9 +599,6 @@ static int cnss_fw_ready_hdlr(struct cnss_plat_data *plat_priv)
 	clear_bit(CNSS_DEV_ERR_NOTIFY, &plat_priv->driver_state);
 
 	cnss_wlfw_send_pcie_gen_speed_sync(plat_priv);
-
-	if (cnss_wlfw_qdss_dnld_send_sync(plat_priv))
-		cnss_pr_info("Failed to download qdss configuration file");
 
 	if (test_bit(CNSS_FW_BOOT_RECOVERY, &plat_priv->driver_state)) {
 		clear_bit(CNSS_FW_BOOT_RECOVERY, &plat_priv->driver_state);
@@ -1592,6 +1601,9 @@ static int cnss_cold_boot_cal_start_hdlr(struct cnss_plat_data *plat_priv)
 	if (test_bit(CNSS_COLD_BOOT_CAL_DONE, &plat_priv->driver_state)) {
 		cnss_pr_dbg("Calibration complete. Ignore calibration req\n");
 		goto out;
+	} else if (test_bit(CNSS_IN_COLD_BOOT_CAL, &plat_priv->driver_state)) {
+		cnss_pr_dbg("Calibration in progress. Ignore new calibration req\n");
+		goto out;
 	}
 
 	if (test_bit(CNSS_DRIVER_LOADING, &plat_priv->driver_state) ||
@@ -1646,8 +1658,13 @@ static int cnss_cold_boot_cal_done_hdlr(struct cnss_plat_data *plat_priv,
 	cnss_wlfw_wlan_mode_send_sync(plat_priv, CNSS_OFF);
 	cnss_bus_free_qdss_mem(plat_priv);
 	cnss_release_antenna_sharing(plat_priv);
+	if (plat_priv->device_id == QCN7605_DEVICE_ID)
+		goto skip_shutdown;
+
 	cnss_bus_dev_shutdown(plat_priv);
 	msleep(COLD_BOOT_CAL_SHUTDOWN_DELAY_MS);
+
+skip_shutdown:
 	complete(&plat_priv->cal_complete);
 	clear_bit(CNSS_IN_COLD_BOOT_CAL, &plat_priv->driver_state);
 	set_bit(CNSS_COLD_BOOT_CAL_DONE, &plat_priv->driver_state);
@@ -2233,7 +2250,7 @@ static int cnss_register_ramdump_v1(struct cnss_plat_data *plat_priv)
 	dev = &plat_priv->plat_dev->dev;
 	ramdump_info = &plat_priv->ramdump_info;
 
-	if (of_property_read_u32(dev->of_node, "qcom,wlan-ramdump-dynamic",
+	if (of_property_read_u32(plat_priv->dev_node, "qcom,wlan-ramdump-dynamic",
 				 &ramdump_size) == 0) {
 		ramdump_info->ramdump_va =
 			dma_alloc_coherent(dev, ramdump_size,
@@ -2311,13 +2328,13 @@ static int cnss_register_ramdump_v2(struct cnss_plat_data *plat_priv)
 	struct cnss_ramdump_info_v2 *info_v2;
 	struct cnss_dump_data *dump_data;
 	struct msm_dump_entry dump_entry;
-	struct device *dev = &plat_priv->plat_dev->dev;
 	u32 ramdump_size = 0;
 
 	info_v2 = &plat_priv->ramdump_info_v2;
 	dump_data = &info_v2->dump_data;
 
-	if (of_property_read_u32(dev->of_node, "qcom,wlan-ramdump-dynamic",
+	if (of_property_read_u32(plat_priv->dev_node,
+				 "qcom,wlan-ramdump-dynamic",
 				 &ramdump_size) == 0)
 		info_v2->ramdump_size = ramdump_size;
 
@@ -2384,6 +2401,7 @@ int cnss_register_ramdump(struct cnss_plat_data *plat_priv)
 		break;
 	case QCA6290_DEVICE_ID:
 	case QCA6390_DEVICE_ID:
+	case QCN7605_DEVICE_ID:
 	case QCA6490_DEVICE_ID:
 	case WCN7850_DEVICE_ID:
 		ret = cnss_register_ramdump_v2(plat_priv);
@@ -2404,6 +2422,7 @@ void cnss_unregister_ramdump(struct cnss_plat_data *plat_priv)
 		break;
 	case QCA6290_DEVICE_ID:
 	case QCA6390_DEVICE_ID:
+	case QCN7605_DEVICE_ID:
 	case QCA6490_DEVICE_ID:
 	case WCN7850_DEVICE_ID:
 		cnss_unregister_ramdump_v2(plat_priv);
@@ -2519,6 +2538,18 @@ int cnss_minidump_remove_region(struct cnss_plat_data *plat_priv,
 }
 #endif /* CONFIG_QCOM_MINIDUMP */
 
+int cnss_request_firmware_direct(struct cnss_plat_data *plat_priv,
+				 const struct firmware **fw_entry,
+				 const char *filename)
+{
+	if (IS_ENABLED(CONFIG_CNSS_REQ_FW_DIRECT))
+		return request_firmware_direct(fw_entry, filename,
+					       &plat_priv->plat_dev->dev);
+	else
+		return request_firmware(fw_entry, filename,
+					&plat_priv->plat_dev->dev);
+}
+
 #if IS_ENABLED(CONFIG_INTERCONNECT)
 /**
  * cnss_register_bus_scale() - Setup interconnect voting data
@@ -2527,7 +2558,7 @@ int cnss_minidump_remove_region(struct cnss_plat_data *plat_priv,
  * For different interconnect path configured in device tree setup voting data
  * for list of bandwidth requirements.
  *
- * Result: 0 for success. -EINVAL if not configured
+ * Result: 0 for success. -ENOMEM if cannot allocate memory
  */
 static int cnss_register_bus_scale(struct cnss_plat_data *plat_priv)
 {
@@ -2541,8 +2572,8 @@ static int cnss_register_bus_scale(struct cnss_plat_data *plat_priv)
 				   "qcom,icc-path-count",
 				   &plat_priv->icc.path_count);
 	if (ret) {
-		cnss_pr_err("Platform Bus Interconnect path not configured\n");
-		return -EINVAL;
+		cnss_pr_dbg("Platform Bus Interconnect path not configured\n");
+		return 0;
 	}
 	ret = of_property_read_u32(plat_priv->plat_dev->dev.of_node,
 				   "qcom,bus-bw-cfg-count",
@@ -2711,13 +2742,13 @@ static ssize_t fs_ready_store(struct device *dev,
 	cnss_pr_dbg("File system is ready, fs_ready is %d, count is %zu\n",
 		    fs_ready, count);
 
-	if (test_bit(QMI_BYPASS, &plat_priv->ctrl_params.quirks)) {
-		cnss_pr_dbg("QMI is bypassed.\n");
+	if (!plat_priv) {
+		cnss_pr_err("plat_priv is NULL\n");
 		return count;
 	}
 
-	if (!plat_priv) {
-		cnss_pr_err("plat_priv is NULL!\n");
+	if (test_bit(QMI_BYPASS, &plat_priv->ctrl_params.quirks)) {
+		cnss_pr_dbg("QMI is bypassed\n");
 		return count;
 	}
 
@@ -3017,6 +3048,7 @@ static const struct platform_device_id cnss_platform_id_table[] = {
 	{ .name = "qca6390", .driver_data = QCA6390_DEVICE_ID, },
 	{ .name = "qca6490", .driver_data = QCA6490_DEVICE_ID, },
 	{ .name = "wcn7850", .driver_data = WCN7850_DEVICE_ID, },
+	{ .name = "qcaconv", .driver_data = 0},
 	{ },
 };
 
@@ -3036,6 +3068,9 @@ static const struct of_device_id cnss_of_match_table[] = {
 	{
 		.compatible = "qcom,cnss-wcn7850",
 		.data = (void *)&cnss_platform_id_table[4]},
+	{
+		.compatible = "qcom,cnss-qca-converged",
+		.data = (void *)&cnss_platform_id_table[5]},
 	{ },
 };
 MODULE_DEVICE_TABLE(of, cnss_of_match_table);
@@ -3067,6 +3102,12 @@ static ssize_t cnss_version_information_show(struct device *dev,
 
 static DEVICE_ATTR_RO(cnss_version_information);
 
+static inline bool
+cnss_is_converged_dt(struct cnss_plat_data *plat_priv)
+{
+	return of_property_read_bool(plat_priv->plat_dev->dev.of_node,
+				     "qcom,converged-dt");
+}
 static int cnss_probe(struct platform_device *plat_dev)
 {
 	int ret = 0;
@@ -3098,7 +3139,9 @@ static int cnss_probe(struct platform_device *plat_dev)
 
 	plat_priv->plat_dev = plat_dev;
 	plat_priv->device_id = device_id->driver_data;
-	plat_priv->bus_type = cnss_get_bus_type(plat_priv->device_id);
+	plat_priv->is_converged_dt = cnss_is_converged_dt(plat_priv);
+	plat_priv->dev_node = plat_priv->plat_dev->dev.of_node;
+	plat_priv->bus_type = cnss_get_bus_type(plat_priv);
 	plat_priv->use_nv_mac = cnss_use_nv_mac(plat_priv);
 	plat_priv->use_fw_path_with_prefix =
 		cnss_use_fw_path_with_prefix(plat_priv);
@@ -3166,15 +3209,7 @@ static int cnss_probe(struct platform_device *plat_dev)
 	if (ret < 0)
 		cnss_pr_err("CNSS genl init failed %d\n", ret);
 	device_create_file(&plat_priv->plat_dev->dev,
-<<<<<<< HEAD
 			   &dev_attr_wifichain_flag);
-=======
-			   &dev_attr_cnss_version_information);
-	device_create_file(&plat_priv->plat_dev->dev,
-			   &dev_attr_wifichain_flag);
-	device_create_file(&plat_priv->plat_dev->dev,
-			   &dev_attr_bdf_name);
->>>>>>> Vendor_916_Upgrade_Base_914
 	cnss_pr_info("Platform driver probed successfully.\n");
 
 	return 0;
@@ -3228,15 +3263,7 @@ static int cnss_remove(struct platform_device *plat_dev)
 	platform_set_drvdata(plat_dev, NULL);
 	plat_env = NULL;
 	device_remove_file(&plat_priv->plat_dev->dev,
-<<<<<<< HEAD
 			   &dev_attr_wifichain_flag);
-=======
-			   &dev_attr_cnss_version_information);
-	device_remove_file(&plat_priv->plat_dev->dev,
-			   &dev_attr_wifichain_flag);
-	device_remove_file(&plat_priv->plat_dev->dev,
-			   &dev_attr_bdf_name);
->>>>>>> Vendor_916_Upgrade_Base_914
 
 	return 0;
 }
